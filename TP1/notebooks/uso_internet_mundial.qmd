@@ -1,0 +1,140 @@
+---
+title: "uso_internet_mundial"
+format: html
+---
+
+```{r}
+install.packages("readr")
+install.packages("janitor")
+install.packages("tidyverse")
+
+library(readr)
+library(janitor)
+library (tidyverse)
+
+
+
+
+#instalamos las librerías que vamos a usar
+```
+
+```{r}
+internet_users_world_wide <- read_csv(
+  "../data/internet_users_world_wide.csv",
+  skip = 4
+)
+
+metadata_countries_internet_users <- read_csv("../data/metadata_countries_internet_users.csv")
+
+
+# Primero, leemos ambos archivos csv. Empezamos a contar desde la quinta columna, en la cual están las columnas. 
+
+colnames(metadata_countries_internet_users)
+```
+
+```{r}
+internet_users_world_wide <- clean_names(internet_users_world_wide)
+metadata_countries_internet_users <- clean_names(metadata_countries_internet_users)
+
+colnames(internet_users_world_wide)
+
+# usamos la función clean_names para realizar el proceso de normalización de los nombres de las columnas 
+```
+
+```{r}
+internet <- internet_users_world_wide |>
+  pivot_longer(
+    cols = -c(country_name, country_code, indicator_name, indicator_code),
+    names_to = "year",
+    values_to = "value"
+  ) |>
+mutate(year = as.numeric(gsub("^x", "", year))) |>
+filter(year >= 1960 & year <= 2025) |>
+drop_na(value)
+
+head(internet)
+
+
+```
+
+Con el pivot longer pasamos la tabla de wide a long. Todas las columnas de anios que iban de 1960 a 2025 pasan a concentrarse dentro de la variable year. Con el cols = -c, se explica que queremos mutar todas las columnas (es decir, la de los anios) excepto las 4 columnas que sirven de referencia al nombre del país y su indicador. El mutate se implementa para quitar la X que llevaba cada variable de anio luego de haber aplicado la normalización con clean names, transformando el dato a un numérico. Con el filter nos quedamos con los anios entre 1960 y 2025. Se usa ya que se observa que cada país tiene una fila en donde el valor de year es 71, por lo que se elimina. Con el drop_na (value) eliminamos las observaciones que no posean datos sobre el estado de personas que tenían acceso a internet en un país en determinado anio.
+
+```{r}
+metadata <- metadata_countries_internet_users |>
+  select(country_code, region, income_group, table_name) |>
+  drop_na(region, income_group)
+```
+
+Con la tabla de metadata, se prefiere eliminar la columna de special notes que no se considera relevante para la comparación (esto a través del comando select). Luego, nos interesa eliminar aquellas observaciones que no tienen datos acerca de la región o su tipo de ingreso, ya que no van a tener utilidad para ser comparadas al faltarles datos.
+
+```{r}
+internet_join <- internet |>
+  left_join ( metadata, by = "country_code") |>
+  drop_na (income_group, region) |>
+  filter(year == 2013 | year == 2023) 
+  
+  
+  
+ 
+view(internet_join) 
+  
+
+```
+
+Se hace un left join incorporando los datos de la tabla metadata a los de internet en la nueva tabla "internet_join". Se agrupa las tablas por la variable country_code ya que es la variable que comparten ambas tablas. Se aplica la función filter para que tome solo los anios 2013 y 2023 de las observaciones, que es de interés para la investigación
+
+```{r}
+Resumen_regional_2013 <- internet_join |>
+  filter( year == 2013) |>
+  group_by(region) |>
+  summarise(promedio_acceso_2013 = mean(value, na.rm = TRUE))
+
+
+Resumen_regional_2023 <- internet_join |>
+  filter( year == 2023) |>
+  mutate(grupo_ingreso = case_when(
+    income_group == "Low income" | income_group == "Lower middle income" ~ "Bajos ingresos",
+    income_group == "Upper middle income" | income_group == "High income" ~ "Altos ingresos"
+  )) |>
+  group_by(region)|>
+  summarise(
+    promedio_acceso_2023 = mean(value, na.rm = TRUE),
+    bajos = sum(grupo_ingreso == "Bajos ingresos", na.rm = TRUE),
+    altos = sum(grupo_ingreso == "Altos ingresos", na.rm = TRUE)) |>
+  mutate(predominio_ingreso = case_when(
+    bajos > altos ~ "Predominan ingresos bajos",
+    altos > bajos ~ "Predominan ingresos altos",
+    TRUE ~ "Situación equilibrada")) |>
+  
+
+  
+  
+
+view(Resumen_regional_2013)
+view(Resumen_regional_2023)
+
+Tabla_resultados <- Resumen_regional_2023 |>
+  left_join(Resumen_regional_2013, by = "region" )
+view(Tabla_resultados)
+ # mutate(lower_income_group = mean(value for income_group = "Low income" and "Lower middle income"))
+
+```
+
+Se crean 2 tablas: Sumarized 2013 y 2023, que indican cada una cual era el promedio de ingreso en dichos anios para cada grupo. Con el comando mutate, se crea la nueva columna Grupo_ingreso, que tendrá las categorias de Altos ingresos (conformada por los países de ingresos altos y medios altos) y la de Bajos ingresos (conformada por los países de ingresos medios bajos y bajos). Se promedia luego entre ambos grupos cual era el nivel de acceso promedio que tenían a internet, mediante los comandos group_by y summarise.
+
+```{r}
+first_evolution <- Sumarized_2013 |>
+  rename(promedio_2013 = promedio_acceso) |>
+  inner_join( Sumarized_2023, by = "grupo_ingreso") |>
+  rename(promedio_2023 = promedio_acceso)
+
+final_evolution <- first_evolution |>
+  mutate(evolucion_altos_ingresos = ((promedio_2023 - promedio_2013)/promedio_2013))
+
+
+
+
+  
+view(final_evolution)
+  
+```
