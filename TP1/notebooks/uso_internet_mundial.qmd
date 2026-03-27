@@ -4,9 +4,9 @@ format: html
 ---
 
 ```{r}
-install.packages("readr")
-install.packages("janitor")
-install.packages("tidyverse")
+#install.packages("readr")
+#install.packages("janitor")
+#install.packages("tidyverse")
 
 library(readr)
 library(janitor)
@@ -30,6 +30,8 @@ metadata_countries_internet_users <- read_csv("../data/metadata_countries_intern
 # Primero, leemos ambos archivos csv. Empezamos a contar desde la quinta columna, en la cual están las columnas. 
 
 colnames(metadata_countries_internet_users)
+
+#leemos los nombres de las columnas de metadata_countries_internet_users
 ```
 
 ```{r}
@@ -87,7 +89,8 @@ Se hace un left join incorporando los datos de la tabla metadata a los de intern
 Resumen_regional_2013 <- internet_join |>
   filter( year == 2013) |>
   group_by(region) |>
-  summarise(promedio_acceso_2013 = mean(value, na.rm = TRUE))
+  summarise(promedio_acceso_2013 = mean(value, na.rm = TRUE)) |>
+  arrange(desc(promedio_acceso_2013))
 
 
 Resumen_regional_2023 <- internet_join |>
@@ -102,39 +105,50 @@ Resumen_regional_2023 <- internet_join |>
     bajos = sum(grupo_ingreso == "Bajos ingresos", na.rm = TRUE),
     altos = sum(grupo_ingreso == "Altos ingresos", na.rm = TRUE)) |>
   mutate(predominio_ingreso = case_when(
-    bajos > altos ~ "Predominan ingresos bajos",
-    altos > bajos ~ "Predominan ingresos altos",
-    TRUE ~ "Situación equilibrada")) |>
+    abs(bajos - altos) < 5 & bajos + altos > 5 ~ "Situación equilibrada",
+    bajos > altos ~ "ingresos bajos",
+    altos > bajos ~ "ingresos altos",
+     
+     )) |>
+  arrange(desc(promedio_acceso_2023))
   
 
   
   
 
-view(Resumen_regional_2013)
-view(Resumen_regional_2023)
+head(Resumen_regional_2013)
+head(Resumen_regional_2023)
 
-Tabla_resultados <- Resumen_regional_2023 |>
-  left_join(Resumen_regional_2013, by = "region" )
-view(Tabla_resultados)
- # mutate(lower_income_group = mean(value for income_group = "Low income" and "Lower middle income"))
+Tabla_datos_regiones <- Resumen_regional_2023 |>
+  left_join(Resumen_regional_2013, by = "region" ) |>
+  relocate(promedio_acceso_2013, .before = promedio_acceso_2023)
+view(Tabla_datos_regiones)
+
 
 ```
 
-Se crean 2 tablas: Sumarized 2013 y 2023, que indican cada una cual era el promedio de ingreso en dichos anios para cada grupo. Con el comando mutate, se crea la nueva columna Grupo_ingreso, que tendrá las categorias de Altos ingresos (conformada por los países de ingresos altos y medios altos) y la de Bajos ingresos (conformada por los países de ingresos medios bajos y bajos). Se promedia luego entre ambos grupos cual era el nivel de acceso promedio que tenían a internet, mediante los comandos group_by y summarise.
+Se crean 2 tablas: Resumen_regional 2013 y 2023, que indican cada una cual era el promedio de acceso a internet en dichos anios para cada región. Con el comando mutate, se crea la nueva columna Grupo_ingreso, que tendrá las categorias de Altos ingresos (que agrupa a las regiones en donde predominen los ingresos altos y medios altos) y la de Bajos ingresos (conformada por las regiones en donde predominen losingresos medios bajos y bajos). Luego, se hace una agrupación por región y le pedimos que sume la cantidad de observaciones (países) que tiene con bajos y altos ingresos, ya que posteriormente nos interesa saber si en esa región predominan los ingresos altos o bajos. Con el mutate se crea la nueva columna que especificará si se trata de una región de altos o bajos ingresos (dependiendo de si hay más países de un grupo o del otro en esa región). Además, se agrega una condición para que aquellas regiones en la que la diferencia entre bajos y altos no sea muy significativa (si es menor a 5), que se la considere como una región intermedia. Esto se hace para evitar posibles sesgos, como por ejemplo en Medio Oriente y norte de África, que se contabilizaría como una región de ingresos altos, que puede estar distorsionado por la cantidad de pequenios Estados de altos ingresos en arabia que sesgan el ingreso promedio de la región. Además, en esa región deben haber más de 5 observaciones, ya que en ese caso las regiones en el dataset que no superan los 5 países, y en relatividad a su tamanio tienen un ratio desproporcionado entre Estados de ingresos bajos y altos, y sin incluir esta precondición quedarían determinadas como regiones intermedias de ingreso. Luego, ya que la operación de clasificación de región por ingreso se realizó dentro de la tabla de los datos del anio 2023, se hace un left join para incorporar los datos faltantes provenientes de la tabla del 2013, renombrándo el join como Tabla_resultados. El relocate se considera para mover la columna de los datos de acceso a internet del anio 2013 hacia el frente de la tabla
+
+En resumen, nos interesa saber cual era el acceso de internet promedio de las regiones en los anios 2013 y 2023, además de observar si se caracterizaban por tener ingresos altos o bajos. Otro sesgo a considerar podrían ser países que no poseían información para el dataset que podrían modificar el estatus de ingreso de la región. Otro problema que podría presentar este esquema de precondiciones es el inconveniente con una región que tuviera pocos países y poca diferencia entre países de altos y bajos ingresos.
 
 ```{r}
-first_evolution <- Sumarized_2013 |>
-  rename(promedio_2013 = promedio_acceso) |>
-  inner_join( Sumarized_2023, by = "grupo_ingreso") |>
-  rename(promedio_2023 = promedio_acceso)
 
-final_evolution <- first_evolution |>
-  mutate(evolucion_altos_ingresos = ((promedio_2023 - promedio_2013)/promedio_2013))
+Tabla_resultados <- Tabla_datos_regiones |>
 
+  mutate(evolucion_acceso_internet = (promedio_acceso_2023 - promedio_acceso_2013)/promedio_acceso_2013) |>
+  arrange(desc(evolucion_acceso_internet))
 
+head(Resumen_regional_2023)
+view(Tabla_resultados)
 
-
+write.csv(Tabla_resultados, "../output/resultado_hipotesis.csv", row.names = FALSE)
   
-view(final_evolution)
   
+ 
 ```
+
+A partir de los datos disponibles, se crea la nueva columna "evolucion_acceso_internet" que evidencia cuál fue la evolución de acceso a internet en un lapso de 10 anios (2013-2023), con base en el cálculo de crecimiento porcentual. Luego, se ordena a las regiones de mayor a menor según su crecimiento relativo.
+
+**CONCLUSIONES**
+
+En conclusión, se puede observar que las regiones que se caracterizan por tener bajos ingresos fueron las que tuvieron más crecimiento relativo en su acceso a internet. Es relevante analizar que la región de África Subsahariana fue la que más crecimiento tuvo, y es la que posee más diferencia entre países de bajos y altos ingresos. Por otro lado, Europa y Asia Central, siendo la región que posee más países de ingresos altos en relación a los de ingresos bajos, es la segunda región que menos crecimiento tuvo. No obstante, se pudo detallar que, a pesar de su crecimiento, estas regiones siguen siendo las que menos acceso a internet tienen.
