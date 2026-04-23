@@ -37,7 +37,7 @@ nombres_meses <- c("enero", "febrero", "marzo", "abril")
 titulos <- list()
 
 # creamos un vector llamado meses para luego recorrerlo con un for, y una lista
-# vacía en donde irán los títulos de las noticias. También la lista de links totales y 
+# vacía en donde irán los links de títulos de las noticias de cada mes. También la lista de links totales y 
 # de cuerpos, explicadas más adelante
 links_totales <- c()
 cuerpos <- list()
