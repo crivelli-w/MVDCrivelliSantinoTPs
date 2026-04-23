@@ -174,6 +174,4 @@ saveRDS(
 
 tabla_final
 
-length(cuerpos)
-sum(is.na(unlist(cuerpos)))
 

@@ -4,7 +4,7 @@ oea_tfidf <- lema_oea_df |>
 
 # comenzamos creando una tabla de tf idf de las palabras que quedaron de la 
 # iteración anterior
-n_docs <- 10
+n_docs <- 6
 
 oea_destacados <- oea_tfidf |>
   group_by(lemma) |>
