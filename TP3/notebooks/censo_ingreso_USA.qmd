@@ -1,0 +1,175 @@
+---
+title: "TP3 - Regresión Logística"
+author: "Santino Crivelli"
+date: "`r Sys.Date()`"
+lang: es
+
+execute:
+  echo: true
+  warning: false
+  message: false
+  cache: true
+
+format:
+  html:
+    toc: true
+    toc-location: left
+    toc-title: "Contenidos"
+    number-sections: true
+    embed-resources: true
+    theme: cosmo
+    code-tools: true
+    df-print: paged
+---
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+
+pacman::p_load(
+  tidyverse,
+  here,
+  janitor,
+  broom,
+  modelsummary,
+  kableExtra,
+  marginaleffects,
+  gt,
+  scales
+)
+```
+
+PARTE 0
+
+Se comienza con la lectura del archivo, además de crear una columna llamada Income_level. Si el ingreso del individuo es menor o igual a 50000 dólares entra dentro de la categoría "high" y si es mayor a 50000 dólares se lo incluye dentro de "Low"
+
+```{r}
+censo <- read.csv(
+  here("TP3","data","adult_census_USA.csv")
+)
+
+censo <- censo|>
+  mutate(Income_level = case_when(
+    income ==  ">50K" ~ "High",
+    income == "<=50K" ~ "Low"
+  ))
+
+
+
+
+```
+
+[**Variables relevantes para predecir el nivel de ingreso**]{.underline}
+
+Como variables consideradas relevantes para explicar el nivel de ingreso, se eligen las siguientes
+
+-   **Nivel de educación** (*education/education_num*): se espera una relación positiva entre nivel de educación y nivel de ingreso. La variable se recodifica mediante una clasificación del nivel de educación con el objetivo de simplificar y entender esta variable. Se la clasifica en las siguientes categorías.
+
+    -   La categoría *No_high_school* abarca a quienes no finalizaron la educación secundaria
+
+    -   La categoría *Medium_level* agrupa a quienes completaron la educación secundaria y tienen estudios terciarios inconclusos.
+
+    -   La categoría *High level* incluye a quienes obtuvieron el título universitario (bachellors) o estudios de posgrado/formación profesional (masters, doctorate, prof-school). Se reconoce la problemática de esta categoría por incluir niveles de educación heterogéneos entre sí, teniendo en cuenta las posibles distancias entre el nivel de bachiller y el nivel de posgrado.
+
+-   **Ocupación** *(ocupation)*: se postula que aquellas ocupaciones que requieren mayor calificación o especialización se encuentran asociadas a una mayor probabilidad de formar parte del grupo de ingresos altos. Por ejemplo, aquellos individuos que se desempeñen en funciones ejecutivas o profesionales especializados.
+
+-   **Horas trabajadas por semana** *(hours_per_week)*: se espera una relación positiva entre horas trabajadas semanalmente y la probabilidad de pertenecer al nivel de ingresos altos. Aquellos individuos que dedican más horas al ámbito laboral pueden verse beneficiados con mejores renumeraciones
+
+-   **Ganancia o pérdida de capital** (capital_gain / capital_loss): existe la expectativa de una relación positiva entre ganancia de capital y la probabilidad de pertenecer al grupo de ingresos altos. Pese a que estas variables pueden presentar redundancia respecto a la variable objetivo, dado que la ganancia de capital implica directamente la generación de ingresos, permite abordar aspectos como la evalcuación del nivel de significancia de las ganancias o pérdidas de capital en la probabilidad de pertenecer a determinado grupo de ingreso.
+
+[**Variables que no son tenidas en cuenta dentro del modelo explicativo**]{.underline}
+
+-   **Workclass:** su capacidad explicativa puede presentar limitaciones en su utilización de predecir el grupo de ingreso. Por ejemplo, los sectores público y privado pueden abarcar ocupaciones con niveles heterogéneos de renumeración. En consecuencia no necesariamente existe una asociación directa entre el sector del empleo y la pertenencia a un grupo de ingreso en específico.
+
+-   **Age:** Si bien las visualizaciones sugierenla existencia de diferencias en la distribución de edades entre los grupos de ingreso, estas parecen presentarse en las edades más tempranas. Esta dinámica podría explicarse por el hecho de que los individuos más jóvenes se encuentran en las primeras etapas de su trayectoria laboral, caracterizadas por menores niveles de experiencia y renumeración. A medida de que se acumula experiencia en el mercado laboral, aumenta su capacidad de acceder a ofertas u opciones de trabajo de mayor ingreso. Sin embargo, en los rangos etarios intermedios las diferencias de edad entre individuos pueden ganar indiferencia como variable explicativa. Sin embargo, podría ser útil observar la presencia del primer fenómeno mencionado.
+
+-   **Marital status:** el estudio no considera importante el estado marital del individuo como variable de influencia en la probabilidad del individuo de pertenecer a determinado grupo de ingreso.
+
+-   **Race/native country:**se decidió no incorporar estas variables dentro del conjunto principal de predictores de la probabilidad de pertenecer a determinado grupo de ingresos. La decisión se justifica ya que en primer lugar es desproporcionada la cantidad de personas nativas y de raza blanca en comparación con el resto de las opciones. Por ello, la información disponible no está correctamente balanceada para nutrir a una posible explicación.
+
+-   **Relationship:**
+
+```{r}
+
+
+censo <- censo |>
+  mutate(
+    education_group = case_when(
+      education %in% c(
+        "Preschool",
+        "1st-4th",
+        "5th-6th",
+        "7th-8th",
+        "9th",
+        "10th",
+        "11th",
+        "12th"
+      ) ~ "No_high_school",
+
+      education %in% c(
+        "HS-grad",
+        "Some-college",
+        "Assoc-acdm",
+        "Assoc-voc"
+        ) ~ "medium_level",
+      education %in% c(
+        "Masters",
+        "Bachelors",
+        "Doctorate",
+        "Prof-school"
+        ) ~ "High_level"
+      )
+    )
+  
+
+race_<- censo |>
+  count(race)
+  group_by(race) |>
+  summarise(
+    pct_high_income = mean(income == ">50K") * 100,
+    n = n()
+  ) |>
+  arrange(desc(pct_high_income))
+
+```
+
+\_
+
+PARTE 1
+
+```{r}
+# nivel de ingreso vs edad
+
+age_income <- censo |> 
+  ggplot(aes(x = age, fill = income, color = income)) +
+  geom_density(alpha = 0.5, linewidth = 0.8) +
+  labs(
+    title = "Distribución de edad según nivel de ingreso",
+    x = "Edad (años)",
+    y = "Densidad",
+    fill = "Nivel de ingreso",
+    color = "Nivel de ingreso"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 13),
+    legend.position = "bottom"
+  )
+
+age_income
+
+education_income <- censo|>
+  group_by(education) |>
+  summarise(
+    pct_high_income = mean(income == ">50K") * 100,
+    n = n()
+  ) |>
+  arrange(desc(pct_high_income))
+```
+
+```{r}
+ggplot(censo,
+       aes(x = income,
+           y = hours_per_week,
+           fill = income)) +
+  geom_boxplot()
+```
