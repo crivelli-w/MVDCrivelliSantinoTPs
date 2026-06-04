@@ -23,6 +23,8 @@ format:
 ---
 
 ```{r}
+#se instalan las librerías a utilizar en el trabajo
+
 if (!require("pacman")) install.packages("pacman")
 
 pacman::p_load(
@@ -38,9 +40,9 @@ pacman::p_load(
 )
 ```
 
-PARTE 0
+## 0) Preparación, carga y limpieza de datos 
 
-Se comienza con la lectura del archivo, además de crear una columna llamada Income_level. Si el ingreso del individuo es menor o igual a 50000 dólares entra dentro de la categoría "high" y si es mayor a 50000 dólares se lo incluye dentro de "Low"
+Se comienza con la lectura del archivo y la creación de una variable binomial llamada Income_level. Si el ingreso del individuo es menor o igual a 50000 dólares entra dentro de la categoría "high" y si es mayor a 50000 dólares se lo incluye dentro de "Low".
 
 ```{r}
 censo <- read.csv(
@@ -72,7 +74,7 @@ Como variables consideradas relevantes para explicar el nivel de ingreso, se eli
 
 -   **Ocupación** *(ocupation)*: se postula que aquellas ocupaciones que requieren mayor calificación o especialización se encuentran asociadas a una mayor probabilidad de formar parte del grupo de ingresos altos. Por ejemplo, aquellos individuos que se desempeñen en funciones ejecutivas o profesionales especializados.
 
--   **Horas trabajadas por semana** *(hours_per_week)*: se espera una relación positiva entre horas trabajadas semanalmente y la probabilidad de pertenecer al nivel de ingresos altos. Aquellos individuos que dedican más horas al ámbito laboral pueden verse beneficiados con mejores renumeraciones
+-   **Horas trabajadas por semana** *(hours_per_week)*: se espera una relación positiva entre horas trabajadas semanalmente y la probabilidad de pertenecer al nivel de ingresos altos. Aquellos individuos que dedican más horas al ámbito laboral pueden verse beneficiados con mejores renumeraciones.
 
 -   **Ganancia o pérdida de capital** (capital_gain / capital_loss): existe la expectativa de una relación positiva entre ganancia de capital y la probabilidad de pertenecer al grupo de ingresos altos. Pese a que estas variables pueden presentar redundancia respecto a la variable objetivo, dado que la ganancia de capital implica directamente la generación de ingresos, permite abordar aspectos como la evalcuación del nivel de significancia de las ganancias o pérdidas de capital en la probabilidad de pertenecer a determinado grupo de ingreso.
 
@@ -82,15 +84,13 @@ Como variables consideradas relevantes para explicar el nivel de ingreso, se eli
 
 -   **Age:** Si bien las visualizaciones sugierenla existencia de diferencias en la distribución de edades entre los grupos de ingreso, estas parecen presentarse en las edades más tempranas. Esta dinámica podría explicarse por el hecho de que los individuos más jóvenes se encuentran en las primeras etapas de su trayectoria laboral, caracterizadas por menores niveles de experiencia y renumeración. A medida de que se acumula experiencia en el mercado laboral, aumenta su capacidad de acceder a ofertas u opciones de trabajo de mayor ingreso. Sin embargo, en los rangos etarios intermedios las diferencias de edad entre individuos pueden ganar indiferencia como variable explicativa. Sin embargo, podría ser útil observar la presencia del primer fenómeno mencionado.
 
--   **Marital status:** el estudio no considera importante el estado marital del individuo como variable de influencia en la probabilidad del individuo de pertenecer a determinado grupo de ingreso.
+-   **Marital status/relationship:** el estudio no considera importante el estado marital o estado de relación del individuo como variable de influencia en la probabilidad del individuo de pertenecer a determinado grupo de ingreso.
 
--   **Race/native country:**se decidió no incorporar estas variables dentro del conjunto principal de predictores de la probabilidad de pertenecer a determinado grupo de ingresos. La decisión se justifica ya que en primer lugar es desproporcionada la cantidad de personas nativas y de raza blanca en comparación con el resto de las opciones. Por ello, la información disponible no está correctamente balanceada para nutrir a una posible explicación.
-
--   **Relationship:**
+-   **Race/native country:** se decidió no incorporar estas variables dentro del conjunto principal de predictores de la probabilidad de pertenecer a determinado grupo de ingresos. La decisión se justifica por el hecho de que existe una distribución desbalanceada en la cual predominan individuos nacidos en los Estados unidos y de raza blanca respecto al resto de las categorías. En consecuencia, se presenta difícil obtener comparaciones o conclusiones fiables.
 
 ```{r}
 
-
+# creación de la variable education_group con el comando mutate que se encarga de clasificar al individuo según su educación alcanzada. Con el case_when se pretende que cada individuo entre a determinado grupo educacional según su educación alcanzada. La categorización fue detallada previamente
 censo <- censo |>
   mutate(
     education_group = case_when(
@@ -103,32 +103,25 @@ censo <- censo |>
         "10th",
         "11th",
         "12th"
-      ) ~ "No_high_school",
+      ) ~ "No high school",
 
       education %in% c(
         "HS-grad",
         "Some-college",
         "Assoc-acdm",
         "Assoc-voc"
-        ) ~ "medium_level",
+        ) ~ "medium level",
       education %in% c(
         "Masters",
         "Bachelors",
         "Doctorate",
         "Prof-school"
-        ) ~ "High_level"
+        ) ~ "High level"
       )
     )
   
 
-race_<- censo |>
-  count(race)
-  group_by(race) |>
-  summarise(
-    pct_high_income = mean(income == ">50K") * 100,
-    n = n()
-  ) |>
-  arrange(desc(pct_high_income))
+
 
 ```
 
@@ -137,39 +130,263 @@ race_<- censo |>
 PARTE 1
 
 ```{r}
-# nivel de ingreso vs edad
 
-age_income <- censo |> 
-  ggplot(aes(x = age, fill = income, color = income)) +
-  geom_density(alpha = 0.5, linewidth = 0.8) +
+# nivel de ingreso vs educación 
+paleta_income <- c(
+  "Low"  = "#D73027",
+  "High" = "#1A9850"
+)
+
+edu_graph <- censo |> 
+  ggplot(aes(x = education_group, fill = Income_level)) +
+  geom_bar(position = "fill", alpha = 0.9, color = "white") +
+  scale_fill_manual(values = paleta_income) +
   labs(
-    title = "Distribución de edad según nivel de ingreso",
-    x = "Edad (años)",
-    y = "Densidad",
-    fill = "Nivel de ingreso",
-    color = "Nivel de ingreso"
+    title = "Ingresos según nivel educativo",
+    x = "\nNivel educativo",
+    y = "Proporción",
+    fill = "Nivel de ingreso"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    plot.title = element_text(face = "bold", size = 13),
+    plot.title = element_text(face = "bold", size = 15),
+    panel.grid.major.x = element_blank(),
+    axis.text.x = element_text(
+      hjust = 1,
+      size = 11,
+      margin = margin(t = 8)
+    ),
+    axis.title.x = element_text(
+      size = 13,
+      margin = margin(t = 12)
+    ),
+    scale_fill_manual(values = paleta_income),
     legend.position = "bottom"
   )
 
-age_income
+edu_graph
 
-education_income <- censo|>
-  group_by(education) |>
-  summarise(
-    pct_high_income = mean(income == ">50K") * 100,
-    n = n()
-  ) |>
-  arrange(desc(pct_high_income))
+
 ```
 
 ```{r}
-ggplot(censo,
-       aes(x = income,
-           y = hours_per_week,
-           fill = income)) +
-  geom_boxplot()
+#ingreso vs ocupación
+
+#se construye una tabla descriptiva en formato kable para identificar que ocupaciones se asocian a una mayor probabilidad de pertenecer a grupos de altos ingresos
+
+occupation_income <- censo |>
+  group_by(occupation) |>
+  summarise(
+    pct_high_income = mean(Income_level == "High") * 100,
+    n = n()
+  ) |>
+  arrange(desc(pct_high_income))
+
+#hacemos la tabla en formato kable
+
+occupation_income |>
+  knitr::kable(
+    digits = 1,
+    caption = "Porcentaje de individuos de altos ingresos según grupo ocupacional"
+  ) |>
+  kableExtra::kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = TRUE
+  ) |>
+  kableExtra::row_spec(
+    0,
+    bold = TRUE,
+    color = "white",
+    background = "#1A9850"
+  
+  ) |>
+  kableExtra::column_spec(1, width = "12em") |>
+  kableExtra::column_spec(2, width = "12em") |>
+  kableExtra::column_spec(3, width = "12em")
 ```
+
+```{r}
+
+# Comparamos la distribución de horas trabajadas entre grupos de ingreso, para observar la dispersión y el promedio de horas entre grupos.
+
+# ----------------------------------------------------------
+# Horas trabajadas vs Grupo de ingreso (Violin + Boxplot)
+
+paleta_income <- c(
+  "Low"  = "#D73027",
+  "High" = "#1A9850"
+)
+
+horas_sem <- censo |> 
+  ggplot(aes(x = Income_level, y = hours_per_week, fill = Income_level, color = Income_level)) +
+  geom_violin(alpha = 0.3, linewidth = 0.5, width = 0.8) +
+  geom_boxplot(width = 0.2, alpha = 0.8, color = "gray20", outlier.shape = NA) +
+  scale_fill_manual(values = paleta_income, guide = "none") +
+  scale_color_manual(values = paleta_income, guide = "none") +
+  labs(
+    title = "Horas Trabajadas según Grupo de Ingreso",
+    x = "Grupo de ingreso",
+    y = "Horas trabajadas"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold", size = 15))
+horas_sem
+```
+
+```{r}
+# se utiliza un density plot para comprender en qué grupos de ingreso se encuentran diversos valores de ganancias de capital
+
+ggplot(censo,
+       aes(x = capital_gain,
+           fill = Income_level,
+           color = Income_level)) +
+  geom_density(alpha = 0.4)
+```
+
+### Transformación logarítmica en la visualización
+
+Se sostiene, en pos de mejorar la visualización y el análisis de la distribución de la variable *capital_gain*, realizar una transformación logarítmica para amortiguar la influencia de los valores extremos en las observaciones. La variable posee una distribución profundamente asimétrica, lo que se evidencia en la elevada concentración de valores en 0. Por ello, la transformación resulta pertinente para reducir dicha asimetría y mejorar la interpretación de los resultados.
+
+```{r}
+
+# ingreso vs capital gain
+
+#para evitar la elevada concentración de valores en 0, es pertinente aplicar una transformación logarítmica para reducir la distribución asimétrica
+
+censo <- censo |>
+  mutate(
+    log_gain = log1p(capital_gain)
+  )
+
+ggplot(censo,
+       aes(x = log_gain,
+           fill = Income_level,
+           color = Income_level)) +
+  geom_density(alpha = 0.4, linewidth = 0.8) +
+  scale_fill_manual(values = paleta_income) +
+  scale_color_manual(values = paleta_income) +
+  labs(
+    title = "Distribución de ganancias de capital",
+    subtitle = "Transformación logarítmica: log(1 + capital_gain)",
+    x = "Logaritmo de ganancias de capital",
+    y = "Densidad"
+  ) +
+  theme_minimal(base_size = 14)
+```
+
+### **Término de interacción relevante**
+
+Resulta pertinente estudiar la interacción entre el nivel educativo y la ocupación desempeñada por el individuo. Teóricamente, se espera que mayores niveles de educación alcanzados incrementan la probabilidad del individuo tenga la posibilidad de desempeñarse en ocupaciones que requieren un alto grado de calificación y especialización, así como también de renumeración.
+
+Además, se postula que aquellos individuos con mayor nivel de educación tienen una ventaja sobre aquellos individuos de menor nivel de educación en la misma ocupación. Esto ocurre debido a que una mayor formación puede dotar al individuo con mayores capacidades y habilidades para ejercer funciones laborales que demanden mayor responsabilidad y capacitación. Por ello, el efecto de la ocupación sobre la probabilidad de un individuo a pertenecer a un determinado grupo de ingreso puede variar según el nivel de educación alcanzado.
+
+A continuación, se utiliza un mapa de calor para realizar una distinción de nivel educativo por cada profesión. A partir de la distinción realizada, se ilustra la proporción de miembros de grupos de altos ingresos de cada conjunto de educación + profesión. Con esto, se espera que los conjuntos con alto nivel educativo que se desempeñen en ocupaciones de mayor profesionalización y responsabilidad tengan una mayor proporción de pertenencia al grupo de altos ingresos.
+
+```{r}
+edu_occ <- censo |>
+  group_by(education_group, occupation) |>
+  summarise(
+    pct_high_income = mean(Income_level == "High") * 100,
+    n = n(),
+    .groups = "drop"
+  ) |>
+  filter(n >= 20) |>
+  complete(education_group, occupation)
+
+#primero se realiza una tabla previa (para luego ser transformada a un mapa de calor) con objetivo de separar a las ocupaciones en los distintos grupos de educación de los individuos. Para evitar números de pocos casos el número de individuos en cada categoría debe ser mayor o igual a 20
+  
+
+ggplot(
+  edu_occ,
+  aes(
+    x = education_group,
+    y = occupation,
+    fill = pct_high_income
+  )
+) +
+  geom_tile(color = "white") +
+  geom_text(
+    aes(label = round(pct_high_income, 1)),
+    color = "black"
+  ) +
+   scale_fill_gradient(
+    low = "#E5F5E0",
+    high = "#006D2C") +
+  labs(
+    title = "Porcentaje de individuos de altos ingresos",
+    x = "Nivel educativo",
+    y = "Ocupación",
+    fill = "% High"
+  ) +
+  theme_minimal()
+
+#con geom_tile creamos el mapa de calor, aplicando en base a una mayor proporción de pertenencia al grupo de ingresos alto, una mayor intensidad al color. 
+
+
+
+```
+
+A partir del gráfico, se observa que las combinaciones de ocupaciones asociadas a mayores rangos de responsabilidad, especialización y calificación –como puestos directivos, profesionales especializados o agentes de seguros– junto con niveles de educación elevados presentan una mayor proporción de miembros en el grupo de ingresos altos. En global, se observa una tendencia general según la cual para cada ocupación un nivel de educación alto se asocian con una mayor proporción de individuos pertenecientes al grupo de ingresos altos. Estos resultados sugieren que la educación y la ocupación podrían interactuar entre sí al momento de explicar la probabilidad de pertenecer a dicho grupo.
+
+## 2) Ajuste de los modelos de regresión logística
+
+Para el trabajo se estimarán 2 modelos
+
+[**Modelo 1 (base)**]{.underline}**:** se incluirán las variables mencionadas en el primer apartado: el nivel de educación, la ocupación, las horas trabajadas por semana y los niveles de ganancia de capital
+
+**Modelo 2 (interacción):** se agregan los predictores del modelo de interacción entre el nivel de educación y la ocupación
+
+```{r}
+#primero, recodificamos income_level con su conversión a formato factor para que el modelo identifique las categorías de la variable respuesta y así estimar la probabilidad de pertenecer a la categoría "High", con referencia en la categoría "Low".
+censo <- censo |>
+  mutate(
+    Income_level = factor(
+      Income_level,
+      levels = c("Low", "High")
+    )
+  )
+modelo_base <- glm(
+  Income_level ~ education_group +
+    occupation +
+    hours_per_week +
+    age +
+    log_gain,
+  data = censo,
+  family = binomial()
+)
+
+modelo_int <- glm(
+  Income_level ~ education_group * occupation +
+    hours_per_week +
+    age +
+    log_gain,
+  data = censo,
+  family = binomial()
+)
+
+# Revisión del resumen de los modelos
+summary(modelo_base)
+summary(modelo_int)
+```
+
+#### [Interpretando el summary(): los Log-Odds]{.underline}
+
+**El Modelo 2 (Interactivo):** plantea que el efecto de la educación podría variar según la ocupación desempeñada por el individuo. Es decir, la ventaja asociada a alcanzar niveles educativos más altos podría ser distinta para trabajadores de ocupaciones altamente calificadas que para aquellos desempeñados en ocupaciones de menor especialización. La comparación posterior de métricas de ajuste permitirá evaluar si esta interacción mejora la capacidad explicativa del modelo.
+
+Al observar la columna **Estimate** (expresada en la escala poco intuitiva de los log-odds), pueden identificarse algunos resultados relevantes.
+
+**Nivel educativo:** tomando como referencia a los individuos con educación alta, aquellos con educación media y aquellos que no completaron la educación secundaria presentan coeficientes negativos y altamente significativos. Esto sugiere que menores niveles educativos se asocian con una menor probabilidad de pertenecer al grupo de ingresos altos, manteniendo constantes las demás variables incluidas en el modelo.
+
+**Ocupación:** las ocupaciones asociadas a mayores niveles de responsabilidad, especialización y capacitación, como los puestos directivos (`Exec-managerial`) y las profesiones especializadas (`Prof-specialty`), presentan coeficientes positivos y estadísticamente significativos. Esto indica que desempeñarse en este tipo de ocupaciones se asocia con una mayor probabilidad de integrar el grupo de ingresos altos.
+
+**Horas trabajadas por semana:** el coeficiente positivo y significativo de `hours_per_week` sugiere que una mayor dedicación horaria se relaciona con una mayor probabilidad de pertenecer al grupo de ingresos altos.
+
+**Edad:** si bien no se incluía como variable a considerar, ésta denota un coeficiente positivo y significativo, indicando que individuos de mayor edad tienden a exhibir una mayor probabilidad de integrar el grupo de ingresos altos, posiblemente como consecuencia de una mayor experiencia laboral acumulada.
+
+**Ganancias de capital:** la variable transformada `log_gain` también presenta un coeficiente positivo y altamente significativo. Esto sugiere que mayores ganancias de capital se encuentran asociadas con una mayor probabilidad de pertenecer al grupo de ingresos altos.
+
+No obstante, interpretar directamente variaciones en log-odds puede ser poco intuitivo. Por este motivo, a continuación se transformarán estos coeficientes en métricas más interpretables, utilizando Odds Ratios y Efectos Marginales Promedio (AME), lo que permitirá expresar los resultados en términos de cambios en probabilidades y chances.
+
+## 3. Interpretación de Resultados y Efectos Marginales
+
+#### Odd ratios y efectos marginales promedio
