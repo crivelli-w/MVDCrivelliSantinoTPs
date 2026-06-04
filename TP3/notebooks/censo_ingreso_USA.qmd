@@ -40,7 +40,7 @@ pacman::p_load(
 )
 ```
 
-## 0) Preparación, carga y limpieza de datos 
+## 0) Preparación, carga y limpieza de datos
 
 Se comienza con la lectura del archivo y la creación de una variable binomial llamada Income_level. Si el ingreso del individuo es menor o igual a 50000 dólares entra dentro de la categoría "high" y si es mayor a 50000 dólares se lo incluye dentro de "Low".
 
@@ -389,4 +389,171 @@ No obstante, interpretar directamente variaciones en log-odds puede ser poco int
 
 ## 3. Interpretación de Resultados y Efectos Marginales
 
-#### Odd ratios y efectos marginales promedio
+#### [Odd ratios y efectos marginales promedio]{.underline}
+
+Debido a que la escala log odds puede resultar poco intuitiva, se transforman a odd ratios para facilitar su interpretación. Un OR superior a 1 incrementa las chances de pertenecer al grupo de ingresos altos, mientras que un OR inferior a 1 las reduce.
+
+```{r}
+#| label: odds-ratios
+#| message: false
+#| warning: false
+
+# Se usa broom::tidy con exponentiate = TRUE para obtener los OR automáticamente.
+# conf.int = TRUE nos da los intervalos de confianza.
+
+or_modelo <- broom::tidy(
+  modelo_int,
+  exponentiate = TRUE,
+  conf.int = TRUE
+) |> 
+  filter(term != "(Intercept)") |>
+  select(term, estimate, conf.low, conf.high, p.value) |> 
+  mutate(
+    interpretacion = case_when(
+      estimate > 1 & p.value < 0.05 ~ "Aumenta las chances (Sig.)",
+      estimate < 1 & p.value < 0.05 ~ "Reduce las chances (Sig.)",
+      TRUE ~ "No significativo"
+    )
+  )
+
+#tabla formateada y se hace mas amena la visualización
+
+or_modelo |> 
+  rename(
+    `Predictor` = term,
+    `Odds Ratio` = estimate,
+    `IC Inferior` = conf.low,
+    `IC Superior` = conf.high,
+    `Valor p` = p.value,
+    `Interpretación` = interpretacion
+  ) |> 
+  knitr::kable(
+    digits = 3,
+    caption = "Odds Ratios del Modelo con Interacción"
+  ) |> 
+  kableExtra::kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) |> 
+  
+#se resalta en color las filas que poseen un estadístico significativo (p-valor)
+  kableExtra::row_spec(
+    row = which(or_modelo$p.value < 0.05),
+    bold = TRUE,
+    color = "black",
+    background = "#e6f2ff"
+  )
+```
+
+**Comentario interesante:** Dentro de las personas sin secundaria completa, trabajar en transporte y movimiento mejora las chances respecto de otras ocupaciones.
+
+### Gráfico de bosque (forest plot)
+
+```{r}
+### Gráfico de bosque (forest plot) con barras graduadas
+
+#| label: fig-forest-plot
+#| fig-width: 14
+#| fig-height: 9
+#| message: false
+#| warning: false
+
+# Extraemos los coeficientes en log-odds para calcular manualmente
+# intervalos de confianza al 80%, 95% y 99%.
+df_plot_or <- broom::tidy(modelo_int) |> 
+  filter(term != "(Intercept)") |> 
+  mutate(
+    # Límites en log-odds
+    lo_80 = estimate - qnorm(0.90) * std.error,
+    hi_80 = estimate + qnorm(0.90) * std.error,
+    lo_95 = estimate - qnorm(0.975) * std.error,
+    hi_95 = estimate + qnorm(0.975) * std.error,
+    lo_99 = estimate - qnorm(0.995) * std.error,
+    hi_99 = estimate + qnorm(0.995) * std.error,
+
+    # Pasamos de log-odds a Odds Ratios
+    across(
+      c(estimate, starts_with("lo_"), starts_with("hi_")),
+      exp
+    ),
+
+    # Etiquetas más legibles para el gráfico
+    term_clean = case_match(
+      term,
+      "age" ~ "Edad",
+      "hours_per_week" ~ "Horas trabajadas por semana",
+      "log_gain" ~ "Log. ganancias de capital",
+      "education_groupMedium level" ~ "Educación media (vs sin secundaria)",
+      "education_groupHigh level" ~ "Educación alta (vs sin secundaria)",
+      "occupation_groupTrades and manual" ~ "Oficios/manual (vs servicios)",
+      "occupation_groupTechnical, sales and admin" ~ "Técnico/ventas/admin. (vs servicios)",
+      "occupation_groupManagement and professional" ~ "Directivo/profesional (vs servicios)",
+
+      "education_groupMedium level:occupation_groupTrades and manual" ~
+        "Interacción: educación media × oficios/manual",
+      "education_groupHigh level:occupation_groupTrades and manual" ~
+        "Interacción: educación alta × oficios/manual",
+      "education_groupMedium level:occupation_groupTechnical, sales and admin" ~
+        "Interacción: educación media × técnico/ventas/admin.",
+      "education_groupHigh level:occupation_groupTechnical, sales and admin" ~
+        "Interacción: educación alta × técnico/ventas/admin.",
+      "education_groupMedium level:occupation_groupManagement and professional" ~
+        "Interacción: educación media × directivo/profesional",
+      "education_groupHigh level:occupation_groupManagement and professional" ~
+        "Interacción: educación alta × directivo/profesional",
+
+      .default = term
+    )
+  )
+
+ggplot(df_plot_or, aes(y = reorder(term_clean, estimate), x = estimate)) +
+  geom_vline(
+    xintercept = 1,
+    linetype = "dashed",
+    color = "gray40",
+    linewidth = 1
+  ) +
+
+  # Intervalo 99%: fino y claro
+  geom_linerange(
+    aes(xmin = lo_99, xmax = hi_99),
+    color = "#74ADD1",
+    linewidth = 1.5
+  ) +
+
+  # Intervalo 95%: medio
+  geom_linerange(
+    aes(xmin = lo_95, xmax = hi_95),
+    color = "#4575B4",
+    linewidth = 3.5
+  ) +
+
+  # Intervalo 80%: grueso y oscuro
+  geom_linerange(
+    aes(xmin = lo_80, xmax = hi_80),
+    color = "#313695",
+    linewidth = 6
+  ) +
+
+  # Estimador central
+  geom_point(color = "#D73027", size = 4) +
+
+  scale_x_log10() +
+
+  labs(
+    title = "Factores asociados a pertenecer al grupo de ingresos altos",
+    subtitle = "Odds Ratios con intervalos de confianza al 80%, 95% y 99%",
+    x = "Odds Ratio (escala logarítmica)",
+    y = NULL,
+    caption = "Si la barra cruza la línea punteada (OR = 1), el efecto no es significativo a ese nivel de confianza."
+  ) +
+  theme_minimal(base_size = 15) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank(),
+    axis.text.y = element_text(face = "bold", size = 11),
+    axis.text.x = element_text(size = 12)
+  )
+```
