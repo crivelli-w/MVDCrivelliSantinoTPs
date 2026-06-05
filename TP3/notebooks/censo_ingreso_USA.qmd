@@ -36,11 +36,12 @@ pacman::p_load(
   kableExtra,
   marginaleffects,
   gt,
-  scales
+  scales,
+  patchwork
 )
 ```
 
-## 0) Preparación, carga y limpieza de datos
+## Preparación, carga y limpieza de datos
 
 Se comienza con la lectura del archivo y la creación de una variable binomial llamada Income_level. Si el ingreso del individuo es menor o igual a 50000 dólares entra dentro de la categoría "high" y si es mayor a 50000 dólares se lo incluye dentro de "Low".
 
@@ -127,7 +128,17 @@ censo <- censo |>
 
 \_
 
-PARTE 1
+## Análisis Exploratorio y Decisiones de Transformación 
+
+Se deciden los siguientes gráficos para ilustrar las distribuciones bivariadas:
+
+-   **Nivel de ingreso vs educación**: se elabora gráfico de barras que ilustre la proporción de individuos pertenecientes al grupo de alto ingreso de cada nivel educativo
+
+-   **Nivel de ingreso vs ocupación:** se crea una tabla hecha en formato *kable* óptima para exponer en órden prolijo y descendente la proporción de individuos en el grupo de altos ingresos por cada ocupación.
+
+-   **Nivel de ingreso vs horas trabajadas semanalmente:** se realiza un gráfico combinado de violín y boxplot para analizar la distribución de las horas trabajadas según el grupo de ingresos. El violín permite visualizar la forma completa de la distribución y la concentración de observaciones, mientras que el boxplot resume medidas descriptivas clave, como la mediana, los cuartiles y los valores atípicos.
+
+-   **Nivel de ingreso vs ganancia capital:** se opta por un gráfico de densidad (density plot) en el intento de ilustrar como fluctúa el valor monetario de las ganancias en la proporción de pertenencia al grupo de altos ingresos.
 
 ```{r}
 
@@ -200,6 +211,9 @@ occupation_income |>
     background = "#1A9850"
   
   ) |>
+  
+  #centrado y orden de columnas
+  
   kableExtra::column_spec(1, width = "12em") |>
   kableExtra::column_spec(2, width = "12em") |>
   kableExtra::column_spec(3, width = "12em")
@@ -251,7 +265,7 @@ Se sostiene, en pos de mejorar la visualización y el análisis de la distribuci
 
 # ingreso vs capital gain
 
-#para evitar la elevada concentración de valores en 0, es pertinente aplicar una transformación logarítmica para reducir la distribución asimétrica
+#para evitar la elevada concentración de valores en 0, es pertinente aplicar una transformación logarítmica para reducir la distribución asimétrica. Primero se modifica dentro del archivo para luego crear el gráfico
 
 censo <- censo |>
   mutate(
@@ -328,7 +342,7 @@ ggplot(
 
 A partir del gráfico, se observa que las combinaciones de ocupaciones asociadas a mayores rangos de responsabilidad, especialización y calificación –como puestos directivos, profesionales especializados o agentes de seguros– junto con niveles de educación elevados presentan una mayor proporción de miembros en el grupo de ingresos altos. En global, se observa una tendencia general según la cual para cada ocupación un nivel de educación alto se asocian con una mayor proporción de individuos pertenecientes al grupo de ingresos altos. Estos resultados sugieren que la educación y la ocupación podrían interactuar entre sí al momento de explicar la probabilidad de pertenecer a dicho grupo.
 
-## 2) Ajuste de los modelos de regresión logística
+## Ajuste de los modelos de regresión logística
 
 Para el trabajo se estimarán 2 modelos
 
@@ -344,6 +358,11 @@ censo <- censo |>
       Income_level,
       levels = c("Low", "High")
     )
+    
+# a pesar de que no se eligió age como variable relevante, se incluye como excepción para ver su incidencia en los resultados, o visualizar el efecto de un factor no elegido
+
+  
+  
   )
 modelo_base <- glm(
   Income_level ~ education_group +
@@ -354,6 +373,8 @@ modelo_base <- glm(
   data = censo,
   family = binomial()
 )
+
+#modelo de interacción entre ocupación y nivel educativo
 
 modelo_int <- glm(
   Income_level ~ education_group * occupation +
@@ -387,7 +408,7 @@ Al observar la columna **Estimate** (expresada en la escala poco intuitiva de lo
 
 No obstante, interpretar directamente variaciones en log-odds puede ser poco intuitivo. Por este motivo, a continuación se transformarán estos coeficientes en métricas más interpretables, utilizando Odds Ratios y Efectos Marginales Promedio (AME), lo que permitirá expresar los resultados en términos de cambios en probabilidades y chances.
 
-## 3. Interpretación de Resultados y Efectos Marginales
+## Interpretación de Resultados y Efectos Marginales
 
 #### [Odd ratios y efectos marginales promedio]{.underline}
 
@@ -450,21 +471,29 @@ or_modelo |>
 
 ### Gráfico de bosque (forest plot)
 
-```{r}
-### Gráfico de bosque (forest plot) con barras graduadas
+Para analizar la robustez de las estimaciones, se grafican los Odds Ratios con intervalos de confianza del 80%, 95% y 99%. La significancia estadística se puede estudiar observando si los intervalos incluyen o no el valor 1. Además, se usa una escala logarítmica en el eje X, que resulta útil enx la representación e interpretación de Odds Ratios.
 
+```{r}
 #| label: fig-forest-plot
 #| fig-width: 14
 #| fig-height: 9
 #| message: false
 #| warning: false
 
-# Extraemos los coeficientes en log-odds para calcular manualmente
-# intervalos de confianza al 80%, 95% y 99%.
+# Extraemos los coeficientes en log odds para calcular
+# los intervalos a distintos niveles de confianza
+
 df_plot_or <- broom::tidy(modelo_int) |> 
-  filter(term != "(Intercept)") |> 
+
+# excluimos el intercepto que no tiene efecto esperable y agregamos una condición de # significancia para el p-valor dejando afuera variables que no tienen relevancia 
+  
+   filter(
+    term != "(Intercept)",
+    p.value < 0.05
+  ) |> 
   mutate(
-    # Límites en log-odds
+# Límites en log-odds usando cuantiles de la distribución normal
+    
     lo_80 = estimate - qnorm(0.90) * std.error,
     hi_80 = estimate + qnorm(0.90) * std.error,
     lo_95 = estimate - qnorm(0.975) * std.error,
@@ -472,40 +501,31 @@ df_plot_or <- broom::tidy(modelo_int) |>
     lo_99 = estimate - qnorm(0.995) * std.error,
     hi_99 = estimate + qnorm(0.995) * std.error,
 
-    # Pasamos de log-odds a Odds Ratios
+# Exponenciamos todo para pasarlo a escala de Odds Ratios
+    
     across(
       c(estimate, starts_with("lo_"), starts_with("hi_")),
       exp
     ),
 
-    # Etiquetas más legibles para el gráfico
+#reestructura de nombres para el gráfico
+
     term_clean = case_match(
       term,
       "age" ~ "Edad",
       "hours_per_week" ~ "Horas trabajadas por semana",
       "log_gain" ~ "Log. ganancias de capital",
-      "education_groupMedium level" ~ "Educación media (vs sin secundaria)",
-      "education_groupHigh level" ~ "Educación alta (vs sin secundaria)",
-      "occupation_groupTrades and manual" ~ "Oficios/manual (vs servicios)",
-      "occupation_groupTechnical, sales and admin" ~ "Técnico/ventas/admin. (vs servicios)",
-      "occupation_groupManagement and professional" ~ "Directivo/profesional (vs servicios)",
-
-      "education_groupMedium level:occupation_groupTrades and manual" ~
-        "Interacción: educación media × oficios/manual",
-      "education_groupHigh level:occupation_groupTrades and manual" ~
-        "Interacción: educación alta × oficios/manual",
-      "education_groupMedium level:occupation_groupTechnical, sales and admin" ~
-        "Interacción: educación media × técnico/ventas/admin.",
-      "education_groupHigh level:occupation_groupTechnical, sales and admin" ~
-        "Interacción: educación alta × técnico/ventas/admin.",
-      "education_groupMedium level:occupation_groupManagement and professional" ~
-        "Interacción: educación media × directivo/profesional",
-      "education_groupHigh level:occupation_groupManagement and professional" ~
-        "Interacción: educación alta × directivo/profesional",
-
       .default = term
     )
+  ) |> 
+  filter(
+    if_all(
+      c(estimate, lo_80, hi_80, lo_95, hi_95, lo_99, hi_99),
+      ~ is.finite(.x) & .x > 0
+    )
   )
+
+# Línea vertical de referencia en OR = 1 (efecto nulo)
 
 ggplot(df_plot_or, aes(y = reorder(term_clean, estimate), x = estimate)) +
   geom_vline(
@@ -514,39 +534,44 @@ ggplot(df_plot_or, aes(y = reorder(term_clean, estimate), x = estimate)) +
     color = "gray40",
     linewidth = 1
   ) +
-
-  # Intervalo 99%: fino y claro
+  
+# Barra 99% 
+  
   geom_linerange(
     aes(xmin = lo_99, xmax = hi_99),
-    color = "#74ADD1",
+    color = "#A8D5BA",
     linewidth = 1.5
   ) +
 
-  # Intervalo 95%: medio
+# Barra 95%
+  
   geom_linerange(
     aes(xmin = lo_95, xmax = hi_95),
-    color = "#4575B4",
+    color = "#4F9D69",
     linewidth = 3.5
   ) +
-
-  # Intervalo 80%: grueso y oscuro
+  
+# Barra 80% 
+  
   geom_linerange(
     aes(xmin = lo_80, xmax = hi_80),
-    color = "#313695",
+    color = "#1B5E20",
     linewidth = 6
   ) +
-
-  # Estimador central
+  
+# Punto del estimador central
+  
   geom_point(color = "#D73027", size = 4) +
-
+  
+# Escala logarítmica en X: crucial para graficar Odds Ratios
+  
   scale_x_log10() +
-
   labs(
     title = "Factores asociados a pertenecer al grupo de ingresos altos",
-    subtitle = "Odds Ratios con intervalos de confianza al 80%, 95% y 99%",
+    subtitle = "Odds Ratios con intervalos de confianza al 80%, 95% y 99% (con aquellas variables que: p-value < 0.05",
     x = "Odds Ratio (escala logarítmica)",
     y = NULL,
-    caption = "Si la barra cruza la línea punteada (OR = 1), el efecto no es significativo a ese nivel de confianza."
+    caption = "Se excluyen coeficientes no estimables o con intervalos infinitos."
   ) +
   theme_minimal(base_size = 15) +
   theme(
@@ -555,5 +580,300 @@ ggplot(df_plot_or, aes(y = reorder(term_clean, estimate), x = estimate)) +
     panel.grid.major.y = element_blank(),
     axis.text.y = element_text(face = "bold", size = 11),
     axis.text.x = element_text(size = 12)
+  ) 
+  
+```
+
+**Comentarios:** En términos generales, el gráfico confirma que la educación, la ocupación, la edad, las horas trabajadas y las ganancias de capital constituyen factores relevantes para explicar la pertenencia al grupo de ingresos altos. Las ocupaciones más calificadas presentan las mayores chances de integrar dicho grupo, mientras que niveles educativos inferiores reducen significativamente esa probabilidad. En contrario, niveles bajos y medios de educación se constituyen como variables que explican la pertenencia a grupos bajos de ingresos. Por otro lado, los resultados aportan escasa evidencia de que el efecto de la educación varíe sustancialmente según la ocupación desempeñada.
+
+### Efectos marginales promedio (AME)
+
+```{r}
+### Tabla de efectos marginales del Modelo 2
+
+
+#| label: average-marginal-effects
+#| message: false
+#| warning: false
+
+# AME estándar para variables continuas y categóricas.
+# Interpreta cambios promedio en la probabilidad de pertenecer al grupo High.
+ame_estandar <- avg_slopes(
+  modelo_int,
+  variables = c(
+    "age",
+    "hours_per_week",
+    "education_group",
+    "occupation"
+  ),
+  slope = "dydx"
+)
+
+# AME para log_gain.
+# Como capital_gain fue transformada con log1p(), interpretamos el efecto
+# del aumento en la variable logarítmica de ganancias de capital.
+ame_capital <- avg_slopes(
+  modelo_int,
+  variables = "log_gain",
+  slope = "dydx"
+)
+
+# Unimos todos los efectos marginales en una sola tabla.
+efectos_marginales <- bind_rows(
+  ame_estandar,
+  ame_capital
+)
+
+# Tabla limpia y formateada.
+efectos_marginales |> 
+  select(term, contrast, estimate, conf.low, conf.high, p.value) |> 
+  mutate(
+    estimate_pct = paste0(round(estimate * 100, 2), "%"),
+    ic_inferior_pct = paste0(round(conf.low * 100, 2), "%"),
+    ic_superior_pct = paste0(round(conf.high * 100, 2), "%"),
+
+    interpretacion = case_when(
+      estimate > 0 & p.value < 0.05 ~ "Aumenta prob. (Sig.)",
+      estimate < 0 & p.value < 0.05 ~ "Reduce prob. (Sig.)",
+      TRUE ~ "No significativo"
+    )
+  ) |> 
+  select(
+    term,
+    contrast,
+    estimate_pct,
+    ic_inferior_pct,
+    ic_superior_pct,
+    p.value,
+    interpretacion
+  ) |> 
+  rename(
+    `Predictor` = term,
+    `Contraste` = contrast,
+    `Efecto (Prob)` = estimate_pct,
+    `IC Inferior` = ic_inferior_pct,
+    `IC Superior` = ic_superior_pct,
+    `Valor p` = p.value,
+    `Interpretación` = interpretacion
+  ) |> 
+  
+  #creamos la tabla kable
+  
+  knitr::kable(
+    digits = 4,
+    caption = "Efectos Marginales Promedio del Modelo con Interacción"
+  ) |> 
+  kableExtra::kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) |> 
+  kableExtra::row_spec(
+    row = which(efectos_marginales$p.value < 0.05),
+    bold = TRUE,
+    color = "black",
+    background = "#e6f2ff"
   )
 ```
+
+**Aclaracion:** Algunas combinaciones entre nivel educativo y ocupación poseen escasa frecuencia de observaciones, por lo que ciertos términos de interacción no han podido ser estimados de manera independiente. Sin embargo, ello no afecta las conclusiones generales del modelo.
+
+#### [Factores a destacar]{.underline}
+
+-   **hours_per_week:** cada hora adicional trabajada por semana aumenta, en promedio, la probabilidad de pertenecer al grupo de ingresos altos en **0.70 puntos porcentuales**, manteniendo constantes las demás variables.
+
+-    **age:** cada año adicional de edad incrementa, en promedio, la probabilidad de integrar el grupo de ingresos altos en **0.82 puntos porcentuales**, siendo uno de los efectos continuos más relevantes del modelo.
+
+-    **log_gain:** un aumento en las ganancias de capital transformadas logarítmicamente incrementa la probabilidad de pertenecer al grupo de ingresos altos en **3.11 puntos porcentuales**, en promedio.
+
+-    **education_group (No high school − High level):** los individuos sin educación secundaria completa presentan, en promedio, una probabilidad **33.59 puntos porcentuales menor** de pertenecer al grupo de ingresos altos respecto de aquellos con niveles educativos elevados. Se trata del efecto negativo más importante del modelo.
+
+-    **education_group (Medium level − High level):** los individuos con niveles educativos medios exhiben una probabilidad **16.07 puntos porcentuales menor** de integrar el grupo de ingresos altos en comparación con aquellos pertenecientes al grupo educativo de referencia.
+
+-    **occupation (Exec-managerial − Adm-clerical):** desempeñarse en puestos directivos aumenta, en promedio, la probabilidad de pertenecer al grupo de ingresos altos en **21.71 puntos porcentuales** respecto de ocupaciones administrativas.
+
+-    **occupation (Prof-specialty − Adm-clerical):** las ocupaciones profesionales especializadas incrementan la probabilidad de integrar el grupo de ingresos altos en **20.63 puntos porcentuales**, constituyéndose como uno de los efectos positivos más importantes del modelo.
+
+-    **occupation (Protective-serv − Adm-clerical):** trabajar en servicios de protección aumenta la probabilidad de pertenecer al grupo de ingresos altos en **19.74 puntos porcentuales** frente a las ocupaciones administrativas.
+
+-    **occupation (Tech-support − Adm-clerical):** las ocupaciones vinculadas al soporte técnico incrementan la probabilidad de pertenecer al grupo de ingresos altos en **17.65 puntos porcentuales**, en promedio.
+
+-    **occupation (Sales − Adm-clerical)** y **occupation (Craft-repair − Adm-clerical):** ambas ocupaciones muestran efectos positivos relevantes, aumentando la probabilidad de pertenecer al grupo de ingresos altos en **11.41** y **11.46 puntos porcentuales**, respectivamente.
+
+-    **occupation (Other-service − Adm-clerical):** reduce la probabilidad de integrar el grupo de ingresos altos en **13.37 puntos porcentuales**.
+
+-    **occupation (Farming-fishing − Adm-clerical)** y **occupation (Handlers-cleaners − Adm-clerical):** presentan efectos negativos de **9.48** y **9.40 puntos porcentuales**, respectivamente.
+
+-    **occupation (Machine-op-inspct − Adm-clerical)** y **occupation (Transport-moving − Adm-clerical):** no presentan efectos estadísticamente significativos, por lo que no existe evidencia suficiente para afirmar que difieran de las ocupaciones administrativas en términos de probabilidad de pertenecer al grupo de ingresos altos.
+
+Los AME confirman lo observado anteriormente mediante los Odds Ratios. La educación se destaca con gran relevancia para explicar la pertenencia al grupo de ingresos altos, especialmente al comparar individuos con niveles educativos bajos frente a niveles de educación altos. Asimismo, determinadas ocupaciones asociadas a mayores niveles de especialización, responsabilidad o calificación incrementan la probabilidad de integrar dicho grupo. Finalmente, la edad, las horas trabajadas y las ganancias de capital también presentan efectos positivos y estadísticamente significativos, aunque de menor magnitud.
+
+## Comparación Global de Modelos 
+
+En esta sección se comparan las predicciones obtenidas a partir del Modelo Base y del Modelo Interactivo para evaluar si la incorporación del término de interacción entre educación y ocupación modifica las probabilidades de pertenecer al grupo de ingresos altos.
+
+Si la interacción tiene un efecto relevante, deberían observarse diferencias marcadas entre las probabilidades predichas por ambos modelos. Por el contrario, si las predicciones se observan similares, ello actúa como evidencia adicional de que la interacción aporta una mejora limitada en la capacidad explicativa del modelo.
+
+```{r}
+#| label: fig-efecto-interaccion
+#| fig-width: 14
+#| fig-height: 8
+#| message: false
+#| warning: false
+
+#primero, para evitar sobreposición de algunas ocupaciones que no resultaron relevantes en el trabajo, se crea un subconjunto de ocupaciones top que serán estudiadas en base a los resultados anteriores. Luego este subconjunto se introduce en el código
+
+ocupaciones_top <- c(
+  "Exec-managerial",
+  "Prof-specialty",
+  "Protective-serv",
+  "Transport-moving"
+)
+
+# Modelo 1: sin interacción.
+# condition usa education_group en el eje X y limita occupation
+# solo a las ocupaciones seleccionadas en ocupaciones_top.
+p_base <- plot_predictions(
+  modelo_base,
+  condition = list(
+    "education_group",
+    occupation = ocupaciones_top
+  )
+) +
+  scale_y_continuous(
+    labels = scales::label_percent(),
+    limits = c(0, 1)
+  ) +
+  labs(
+    title = "Modelo 1: Sin interacción",
+    subtitle = NULL,
+    x = "Nivel educativo",
+    y = "Probabilidad predicha de ingresos altos",
+    color = "Ocupación",
+    fill = "Ocupación"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    legend.position = "bottom"
+  )
+
+# Modelo 2: con interacción.
+# Este gráfico permite observar si el efecto de la educación cambia
+# dependiendo de la ocupación.
+p_int <- plot_predictions(
+  modelo_int,
+  condition = list(
+    "education_group",
+    occupation = ocupaciones_top
+  )
+) +
+  scale_y_continuous(
+    labels = scales::label_percent(),
+    limits = c(0, 1)
+  ) +
+  labs(
+    title = "Modelo 2: Con interacción",
+    subtitle = NULL,
+    x = "Nivel educativo",
+    y = "Probabilidad predicha de ingresos altos",
+    color = "Ocupación",
+    fill = "Ocupación"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    legend.position = "bottom"
+  )
+
+# Combinamos ambos gráficos con patchwork.
+# guides = "collect" junta las leyendas de los dos gráficos en una sola.
+patchwork::wrap_plots(
+  p_base,
+  p_int,
+  ncol = 2,
+  guides = "collect"
+) +
+  patchwork::plot_annotation(
+    title = "Interacción entre educación y ocupación",
+    caption = "Bandas: intervalos de confianza al 95%. Predicciones marginales manteniendo constantes el resto de variables.",
+    theme = theme(
+      plot.title = element_text(face = "bold", size = 17)
+    )
+  ) &
+  theme(
+    legend.position = "bottom",
+    legend.text = element_text(size = 9),
+    legend.title = element_text(size = 10)
+  )
+```
+
+**La interacción resulta limitada**
+
+En el Modelo 1, el efecto del nivel educativo se observa constante para todas las ocupaciones. Es decir, el modelo asume que la diferencia entre individuos con educación alta, media o baja es parecida a pesar de la ocupación que desempeña el individuo.
+
+En el Modelo 2, al introducir la interacción entre educación y ocupación, se da lugar a que el impacto de la educación en la probabilidad de pertenecer al grupo de ingresos altos varíe según el tipo de ocupación. A pesar de ello, los resultados evidencian que las probabilidades predichas obtenidas por ambos modelos son estructuralmente similares en la mayoría de las combinaciones. Las ocupaciones más calificadas continúan denotando mayores probabilidades de pertenecer al grupo de ingresos altos, a la vez que los niveles educativos bajos siguen enlazados a probabilidades menores.
+
+Las diferencias más visibles aparecen en algunas ocupaciones específicas entre individuos con bajos niveles educativos, particularmente en las ocupaciones vinculadas al transporte y movimiento. Sin embargo, estas variaciones son muy específicas y no modifican la estructura general de los resultados. En consecuencia, la evidencia obtenida sugiere que la educación y la ocupación constituyen determinantes relevantes de manera independiente, mientras que la interacción entre ambas variables aporta una mejora explicativa limitada.
+
+#### Inclusión de análisis: AIC y el Pseudo-R2
+
+Introducimos el uso logístico de la *Deviance* (desviación) residual y nula, el pseudo-$R^2$, y el *AIC* (Criterio de Información de Akaike). Pretende observarse si el modelo de interacción supera al modelo base.
+
+Menor *AIC* indica un modelo que ajusta mejor, penalizando por la inclusión de variables innecesarias. Su valor aislado, es decir, sin comparación con un modelo externo, carece de sentido.
+
+Por otro lado, la *Deviance* mide cuánta "información" le falta al modelo para predecir la realidad a la perfección.
+
+```{r}
+## Comparación global de los modelos
+
+#| label: comparacion-ajuste
+#| message: false
+#| warning: false
+
+bind_rows(
+  broom::glance(modelo_base) |> mutate(Modelo = "1. Sin Interacción"),
+  broom::glance(modelo_int)  |> mutate(Modelo = "2. Con Interacción")
+) |> 
+  mutate(
+    pseudo_r2 = 1 - (deviance / null.deviance)
+  ) |> 
+  select(Modelo, null.deviance, deviance, pseudo_r2, AIC, nobs) |> 
+  rename(
+    `Deviance Nula` = null.deviance,
+    `Deviance Residual` = deviance,
+    `Pseudo-R²` = pseudo_r2,
+    `Observaciones` = nobs
+  ) |> 
+  knitr::kable(
+    digits = c(0, 1, 1, 4, 1, 0),
+    caption = "Métricas de ajuste global: Modelo base vs Modelo con interacción"
+  ) |> 
+  kableExtra::kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) |> 
+  kableExtra::row_spec(
+    row = 2,
+    bold = TRUE,
+    color = "black",
+    background = "#e6f2ff"
+  )
+```
+
+**Análisis**
+
+-   **Desvío residual:** Por una parte el desvío residual entre el modelo de base e interacción cae en: 16026.9 → 15970.5, lo que explica una leve adición de la variabilidad de los datos.
+
+-   **Pseudo-R²:** 0.2655 → 0.2681. Se observa una leve mejora en el modelo de interacción
+
+-   **AIC**: se observa una disminución del *AIC* en 6.4 puntos, lo que otorga cierta evidencia a favor del modelo de interacción.
+
+En síntesis, la introducción del modelo de interacción puede como máximo aportar una discreta mejora en el trabajo predictivo.
+
+## Conclusión y comentarios finales
+
+Los resultados obtenidos muestran que la educación y la ocupación se constituyen como factores primarios que pueden asociarse a la pertenencia dentro del grupo de ingresos altos. En particular, los individuos con mayores niveles educativos y ocupaciones de alta calificación presentan probabilidades superiores de integrar dicho grupo. En sintonía, la edad, las horas trabajadas y las ganancias de capital exhiben efectos positivos y estadísticamente significativos sobre dicha probabilidad. Si bien el análisis exploratorio sugería una posible interacción entre educación y ocupación, la evidencia empírica indica que ambos factores operan principalmente de manera independiente. La incorporación del término de interacción mejora levemente el ajuste global del modelo, aunque su contribución resulta limitada en comparación con los efectos principales. En conjunto, los resultados destacan la importancia del capital humano y de la inserción ocupacional como determinantes fundamentales de los niveles de ingreso.
+
+## 
